@@ -74,5 +74,64 @@ export class ProdutoController {
             return res.status(500).json({ message: 'Um erro inesperado ocorreu ao atualizar o produto.' });
         }
     }
-    // ... Métodos para listar e deletar serão adicionados aqui
+
+    // Rota: GET /produtos/:id
+    async findById(req: Request, res: Response): Promise<Response> {
+        const produtoId = parseInt(req.params.id);
+
+        try {
+            const produto = await produtoService.findProdutoById(produtoId);
+
+            if (!produto) {
+                return res.status(404).json({ message: 'Produto não encontrado.' });
+            }
+
+            return res.status(200).json(produto);
+        } catch (error) {
+            return res.status(500).json({ message: 'Erro interno ao buscar produto.' });
+        }
+    }
+
+    // Rota: GET /produtos?estabelecimentoId=...
+    async listByEstabelecimento(req: Request, res: Response): Promise<Response> {
+        const { estabelecimentoId } = req.query;
+
+        if (!estabelecimentoId) {
+            return res.status(400).json({ message: 'O ID do estabelecimento é obrigatório.' });
+        }
+
+        try {
+            const produtos = await produtoService.findProdutosByEstabelecimento(Number(estabelecimentoId));
+            return res.status(200).json(produtos);
+        } catch (error) {
+            return res.status(500).json({ message: 'Erro interno ao listar produtos.' });
+        }
+    }
+
+    // Rota: DELETE /produtos/:id
+    async delete(req: Request, res: Response): Promise<Response> {
+        const produtoId = parseInt(req.params.id);
+
+        // Verificação de segurança: Garante que o usuário está autenticado
+        if (!req.user) {
+            return res.status(401).json({ message: 'Acesso não autorizado. Faça o login para continuar.' });
+        }
+        const usuarioDonoId = req.user.id;
+
+        try {
+            await produtoService.deleteProduto(produtoId, usuarioDonoId);
+            // Status 204 No Content é uma resposta padrão para sucesso em requisições DELETE sem corpo de resposta.
+            return res.status(204).send(); 
+        } catch (error) {
+            if (error instanceof Error) {
+                if (error.message.includes('Permissão negada')) {
+                    return res.status(403).json({ message: error.message }); // Forbidden
+                }
+                if (error.message.includes('não encontrado')) {
+                    return res.status(404).json({ message: error.message }); // Not Found
+                }
+            }
+            return res.status(500).json({ message: 'Um erro inesperado ocorreu ao deletar o produto.' });
+        }
+    }
 }

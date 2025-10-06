@@ -1,5 +1,5 @@
 import prisma from '../db/prisma';
-import { Produto, StatusPedido } from '../../generated/prisma';
+import { Produto } from '../../generated/prisma';
 
 /**
  * Interface para os dados necessários para criar um produto.
@@ -48,84 +48,40 @@ export class ProdutoService {
         return produtoAtualizado;
     }
 
+    // Lógica para buscar um produto por ID
+    async findProdutoById(produtoId: number): Promise<Produto | null> {
+        return prisma.produto.findUnique({
+            where: { id: produtoId },
+            include: {
+                estabelecimento: {
+                    select: { nome: true } // Inclui o nome do estabelecimento
+                }
+            }
+        });
+    }
+
+    // Lógica para Deletar um produto
+    async deleteProduto(produtoId: number, usuarioDonoId: number): Promise<Produto> {
+        const produto = await prisma.produto.findUnique({
+            where: { id: produtoId },
+            select: { estabelecimento: { select: { usuarioId: true } } }
+        });
+
+        if (!produto) {
+            throw new Error('Produto não encontrado.');
+        }
+
+        if (produto.estabelecimento.usuarioId !== usuarioDonoId) {
+            throw new Error('Permissão negada. Apenas o dono pode deletar este produto.');
+        }
+
+        return prisma.produto.delete({ where: { id: produtoId } });
+    }
+
     // Método de listagem de produtos por estabelecimento
     async findProdutosByEstabelecimento(estabelecimentoId: number) {
         return prisma.produto.findMany({
             where: { estabelecimentoId: estabelecimentoId },
-        });
-    }
-}
-
-interface ItemInput {
-    produtoId: number;
-    quantidade: number;
-}
-
-
-export class PedidoService {
-
-    // Criação de pedidos
-    async createPedido(usuarioClienteId: number, estabelecimentoId: number, itens: ItemInput[]) {
-        
-        // O $transaction garante que todas as operações dentro dele dependam uma da outra, ou seja, se uma falhar todas falham.
-        const novoPedido = await prisma.$transaction(async (tx) => {
-            let totalGeral = 0;
-            const itensDoPedido = [];
-
-            // Processar Itens e Calcular Total
-            for (const item of itens) {
-                // Buscamos o produto REAL para obter o preço e garantir que ele exista
-                const produto = await tx.produto.findUnique({
-                    where: { id: item.produtoId },
-                    select: { preco: true, estabelecimentoId: true } // Buscamos apenas o necessário
-                });
-
-                if (!produto || produto.estabelecimentoId !== estabelecimentoId) {
-                    throw new Error(`Produto ${item.produtoId} não é válido para este estabelecimento.`);
-                }
-
-                // Gera o valor total do pedido
-                const precoUnitario = produto.preco; 
-                const subtotal = precoUnitario * item.quantidade;
-                totalGeral += subtotal;
-
-                itensDoPedido.push({
-                    produtoId: item.produtoId,
-                    quantidade: item.quantidade,
-                    precoUnitario: precoUnitario, //armazena o preço real no momento
-                });
-            }
-
-            //Criar o Pedido
-            const pedido = await tx.pedido.create({
-                data: {
-                    usuarioId: usuarioClienteId,
-                    estabelecimentoId: estabelecimentoId,
-                    total: totalGeral, // O total calculado pelo Service
-                    status: StatusPedido.PENDENTE,
-                }
-            });
-
-            // 3. Criar os Itens do Pedido (relacionados ao pedido recém-criado)
-            // Mapeamos a lista para incluir o ID do Pedido
-            const itensComPedidoId = itensDoPedido.map(i => ({ ...i, pedidoId: pedido.id }));
-
-            await tx.pedidoItem.createMany({
-                data: itensComPedidoId,
-            });
-
-            return pedido;
-        });
-
-        return novoPedido; 
-    }
-
-    // Listar Pedidos
-    async findPedidos(filtros: { estabelecimentoId?: number; usuarioId?: number }) {
-        return prisma.pedido.findMany({
-            where: filtros,
-            include: { itens: true, estabelecimento: { select: { nome: true } } },
-            orderBy: { createdAt: 'desc' } // Pedidos mais recentes primeiro
         });
     }
 }
